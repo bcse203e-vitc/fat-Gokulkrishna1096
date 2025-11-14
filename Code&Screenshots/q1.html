@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Parking Charges Processor</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+
+    <h2>Parking Garage Charge Processor</h2>
+
+    <button id="processBtn">Process yesterday.csv</button>
+
+    <div id="output"></div>
+    <div class="stats" id="stats"></div>
+
+<script>
+function calculate_charges(duration_hours) {
+    if (duration_hours <= 0) return { error: true, charge: 0 };
+    const fullDays = Math.floor(duration_hours / 24);
+    const remainingHours = duration_hours % 24;
+    let total = fullDays * 10; 
+    let h = Math.ceil(remainingHours);
+    let charge = 2; // base for first 3 hours
+    if (h > 3) {
+        charge += (h - 3) * 0.5;
+    }
+    if (charge > 10) charge = 10;
+    total += charge;
+    if (duration_hours > 72) {
+        return { error: true, charge: total };
+    }
+    return { error: false, charge: total };
+}
+function downloadCSV(content, filename) {
+    const blob = new Blob([content], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+}
+$("#processBtn").click(function () {
+    $.ajax({
+        url: "yesterday.csv",
+        dataType: "text",
+        success: function (data) {
+            const lines = data.trim().split("\n");
+            lines.shift();
+            let outputCSV = "customer_id,duration_hours,charge,error_flag\n";
+            let totalReceipts = 0;
+            let numCustomers = 0;
+            let maxStay = 0;
+            let maxStayCustomers = [];
+            lines.forEach(row => {
+                const [customer_id, entry_ts, exit_ts] = row.split(",");
+                let entry = new Date(entry_ts);
+                let exit = new Date(exit_ts);
+                let error = false;
+                if (exit <= entry) error = true;
+                const duration_hours = (exit - entry) / (1000 * 60 * 60);
+                const result = calculate_charges(duration_hours);
+                if (result.error) error = true;
+                outputCSV += `${customer_id},${Math.ceil(duration_hours)},${result.charge},${error}\n`;
+                if (!error) {
+                    totalReceipts += result.charge;
+                    numCustomers++;
+                    if (duration_hours > maxStay) {
+                        maxStay = duration_hours;
+                        maxStayCustomers = [customer_id];
+                    } else if (duration_hours === maxStay) {
+                        maxStayCustomers.push(customer_id);
+                    }
+                }
+            });
+            $("#stats").html(`
+                <h3>Summary Statistics</h3>
+                <p><b>Total Receipts:</b> $${totalReceipts.toFixed(2)}</p>
+                <p><b>Number of Customers Charged:</b> ${numCustomers}</p>
+                <p><b>Average Charge:</b> $${(totalReceipts / numCustomers).toFixed(2)}</p>
+                <p><b>Longest Stay Customer(s):</b> ${maxStayCustomers.join(", ")}</p>
+            `);
+            downloadCSV(outputCSV, "charges_report.csv");
+            $("#output").html("<p><b>charges_report.csv downloaded successfully!</b></p>");
+        },
+        error: function () {
+            $("#output").html("<p style='color:red;'><b>Error:</b> Could not load yesterday.csv from the same directory.</p>");
+        }
+    });
+
+});
+</script>
+</body>
+</html>
